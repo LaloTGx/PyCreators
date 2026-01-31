@@ -110,8 +110,7 @@ def slice_horizontal(sheet_img: Image.Image, total_frames: int):
 
 def composite_center(frame: Image.Image, out_size, scale=1.0):
     W, H = out_size
-    
-	# Escalar frame
+
     if scale != 1.0:
         new_w = max(1, int(round(frame.width * scale)))
         new_h = max(1, int(round(frame.height * scale)))
@@ -129,7 +128,6 @@ def main():
     print("=== Sprite -> Video (simple) ===")
     sheet_path = ask_path("Ruta del sprite: ")
 
-    # Abrir imagen
     sheet = Image.open(sheet_path).convert("RGBA")
     sw, sh = sheet.size
     print(f"Sprite sheet: {sw}x{sh}px")
@@ -140,13 +138,12 @@ def main():
 
     scale = ask_float("animationScale (1 = tamaño original)", min_val=0.01, default=1.0)
 
-    duration_s = ask_float("Duración total de la animación en segundos", min_val=0.001, default=5.0)
+    duration_s = ask_float("Duración total de la animación en segundos", min_val=0.001, default=4.0)
 
     out_w, out_h = ask_resolution()
 
     all_frames = slice_horizontal(sheet, total_frames)
 
-    # Ajustar rango (convertir a índices 0-based)
     s = start_frame - 1
     e = end_frame - 1
     sel_frames = all_frames[s : e + 1]
@@ -162,20 +159,16 @@ def main():
         composed = composite_center(fr, (out_w, out_h), scale=scale)
         video_frames.append(np.array(composed))
 
-    # Nombre de salida
     out_name = sheet_path.with_suffix(".mp4")
     out_txt = input(f"Nombre de salida [.mp4] [{out_name.name}]: ").strip()
     if out_txt:
         out_name = Path(out_txt if out_txt.lower().endswith(".mp4") else out_txt + ".mp4")
 
     print("Renderizando (esto puede tardar un poco)...")
-    iio.imwrite(out_name, video_frames, fps=fps, codec="libx264", pixelformat="yuv420p")
+    iio.imwrite(out_name, video_frames, fps=fps, codec="libx264", in_pixel_format="rgb24", out_pixel_format="yuv420p")
 
     print(f"Listo: {out_name.resolve()}")
 
 
 if __name__ == "__main__":
     main()
-
-
-# C:\Users\lalot\OneDrive\Escritorio\Python\logosplashscreen.png
