@@ -8,7 +8,7 @@ Instalacion(arch dentro de un entorno [venv]):
 """
 
 import imageio.v3 as iio
-from PIL import Image
+from PIL import Image, ImageColor
 from pathlib import Path
 import numpy as np
 
@@ -51,6 +51,21 @@ class SpriteUI:
                 if min_val is not None and v < min_val: continue
                 return v
             except ValueError: print("Ingresa un número decimal.")
+# pregunta para el fondo
+    @staticmethod
+    def ask_background():
+        hex_val = input("Color de fondo HEX (6 valores, ej: FF5733 #FF5733, FFF, #FFF) [000000]: ").strip().replace("#", "")
+        if not hex_val: return (0, 0, 0, 255)
+
+        if not hex_val.startswith("#"):
+            hex_val = f"#{hex_val}"
+
+        try:
+            rgb = ImageColor.getrgb(hex_val)
+            return (*rgb, 255)
+        except:
+            print("Formato '{hex_val}' inválido. Usando el color #000000")
+            return (0, 0, 0, 255)
 # pregunta para cualquier duracion
     @staticmethod
     def ask_time_format():
@@ -74,7 +89,6 @@ class SpriteUI:
             w = SpriteUI.ask_int("Ancho (px)", default=1920)
             h = SpriteUI.ask_int("Alto (px)", default=1080)
             return (w, h)
-
         base_res = PRESETS.get(choice, (1920, 1080))
         if ori == 'v':
             return (base_res[1], base_res[0])
@@ -85,14 +99,17 @@ class SpriteEngine:
         self.sheet = Image.open(sheet_path).convert("RGBA")
         self.canvas_px = canvas_px
         self.total_frames = self.sheet.width // canvas_px
+        self.clean_frame = None
 
-    def get_base_processed(self, start, end, out_size, scale):
+    def get_base_processed(self, start, end, out_size, scale, bg_color):
         """
         ESTA ES LA OPTIMIZACIÓN: Solo procesamos los frames originales UNA VEZ.
         Esto se queda en RAM, pero es muy poco (aprox 100-200MB).
         """
         W, H = out_size
         base_frames = []
+
+        self.clean_frame = np.array(Image.new("RGB", (W, H), bg_color[:3]))
 
         for i in range(start - 1, end):
             x = i * self.canvas_px
@@ -103,7 +120,7 @@ class SpriteEngine:
                 new_size = (int(fr.width * scale), int(fr.height * scale))
                 fr = fr.resize(new_size, Image.NEAREST)
 
-            canvas = Image.new("RGBA", (W, H), (0, 0, 0, 255))
+            canvas = Image.new("RGBA", (W, H), bg_color)
             pos = ((W - fr.width) // 2, (H - fr.height) // 2)
             canvas.alpha_composite(fr.convert("RGBA"), pos)
             base_frames.append(np.array(canvas.convert("RGB")))
@@ -112,7 +129,7 @@ class SpriteEngine:
 # proceso de renderizacion
 class VideoRenderer:
     @staticmethod
-    def render(out_name, base_frames, duration_s, anim_duration, is_loop, fps):
+    def render(out_name, base_frames, clean_frame, duration_s, is_loop, fps, keep_last):
         """
         ESTO ES EL STREAMING: Enviamos los frames uno a uno usando un generador.
         """
@@ -124,17 +141,14 @@ class VideoRenderer:
             for i in range(total_video_frames):
                 # Lógica de Loop o Frame Final (Padding)
                 if is_loop:
-                    # Usamos el operador modulo para ciclar sobre la semilla
                     idx = i % num_base
-                    # Pero si no es loop infinito, verificamos si ya cubrimos el tiempo de anim
-                    # (En este script, si es loop, llenamos todo el video)
                     img = base_frames[idx]
                 else:
                     # Si no es loop, mostramos la animación una vez y luego congelamos el último
                     if i < num_base:
                         img = base_frames[i]
                     else:
-                        img = base_frames[-1]
+                        img = base_frames[-1] if keep_last else clean_frame
 
                 if (i + 1) % 50 == 0 or (i + 1) == total_video_frames:
                     print(f"\r- Enviando a GPU: {i+1}/{total_video_frames} frames", end="", flush=True)
@@ -166,23 +180,28 @@ def main():
     scale = ui.ask_float("Escala", default=1.0)
     # Video y renderizacion
     res_video = ui.ask_video_setup()
+    bg_color = ui.ask_background()
     duration_s = ui.ask_time_format()
     # Tiempos de la animación
     print(f"\n: -- Velocidad de Animación -- :")
     manual = input("¿Velocidad manual para el sprite? [s/N]: ").lower() == 's'
     anim_time = ui.ask_float("Segundos por vuelta", default=1.0) if manual else duration_s
     loop = input("¿Activar Bucle (Loop)? [s/N]: ").lower() == 's'
+    # Ultimo frame
+    keep_last = True
+    if not loop and anim_time < duration_s:
+        keep_last = input("¿Dejar el último sprite al terminar la animación? [S/n]: ").lower() != 'n'
 
     # 1. Cacheo la semilla (Poco uso de RAM)
     print("- Procesando frames base...")
-    base_frames = engine.get_base_processed(start, end, res_video, scale)
+    base_frames = engine.get_base_processed(start, end, res_video, scale, bg_color)
 
     # 2. Calculo de los FPS reales para que la animación dure lo que se pidio
     final_fps = max(0.1, len(base_frames) / anim_time)
 
     # 3. Renderizamos (Streaming - No usa RAM extra)
     out_file = path.with_suffix(".mp4")
-    VideoRenderer.render(out_file, base_frames, duration_s, anim_time, loop, final_fps)
+    VideoRenderer.render(out_file, base_frames, engine.clean_frame, duration_s, loop, final_fps, keep_last)
 
     print(f"\n- ¡Listo! {out_file.name}")
 
