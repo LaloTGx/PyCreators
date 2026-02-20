@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-SpriteVideo Modular & Memory Safe
+SpriteVideo & Memory Safe:
     Script minimalista para convertir un sprite sheet (1 sola fila de frames) en un video MP4
     centrado sobre un fondo negro en la resolución que elijas.
-Instalacion(arch dentro de un entorno [venv]):
+Instalación de imports (arch dentro de un entorno [venv]):
     python -m pip install imageio imageio-ffmpeg pillow numpy
 """
 
@@ -51,6 +51,15 @@ class SpriteUI:
                 if min_val is not None and v < min_val: continue
                 return v
             except ValueError: print("Ingresa un número decimal.")
+# pregunta la posición del sprite
+    @staticmethod
+    def ask_position():
+        print(f"\n: -- Posición del Sprite (Numpad) -- :")
+        print("[1] Top-L  [2] Top-C  [3] Top-R")
+        print("[4] Mid-L  [5] Center [6] Mid-R")
+        print("[7] Bot-L  [8] Bot-C  [9] Bot-R")
+        pos = input("Selecciona posición [5]: ").strip() or "5"
+        return pos
 # pregunta para el fondo
     @staticmethod
     def ask_background():
@@ -64,9 +73,9 @@ class SpriteUI:
             rgb = ImageColor.getrgb(hex_val)
             return (*rgb, 255)
         except:
-            print("Formato '{hex_val}' inválido. Usando el color #000000")
+            print(f"Formato '{hex_val}' inválido. Usando el color #000000")
             return (0, 0, 0, 255)
-# pregunta para cualquier duracion
+# pregunta para cualquier duración
     @staticmethod
     def ask_time_format():
         print(f"\n: -- Duración del Video -- :")
@@ -101,14 +110,10 @@ class SpriteEngine:
         self.total_frames = self.sheet.width // canvas_px
         self.clean_frame = None
 
-    def get_base_processed(self, start, end, out_size, scale, bg_color):
-        """
-        ESTA ES LA OPTIMIZACIÓN: Solo procesamos los frames originales UNA VEZ.
-        Esto se queda en RAM, pero es muy poco (aprox 100-200MB).
-        """
+    def get_base_processed(self, start, end, out_size, scale, bg_color, pos_key="5"):
+        # Optimización: Solo procesamos los frames originales una vez.
         W, H = out_size
         base_frames = []
-
         self.clean_frame = np.array(Image.new("RGB", (W, H), bg_color[:3]))
 
         for i in range(start - 1, end):
@@ -120,8 +125,28 @@ class SpriteEngine:
                 new_size = (int(fr.width * scale), int(fr.height * scale))
                 fr = fr.resize(new_size, Image.NEAREST)
 
+            sw, sh = fr.size
+            # Se divide en 3x3 el canvas
+            cw, ch = W // 3, H // 3
+            # Centros de cada celda
+            c_x = [cw // 2, cw + cw // 2, 2 * cw + cw // 2]
+            c_y = [ch // 2, ch + ch // 2, 2 * ch + ch // 2]
+
+            positions = {
+                "1": (c_x[0] - sw // 2, c_y[0] - sh // 2), # Top-Left
+                "2": (c_x[1] - sw // 2, c_y[0] - sh // 2), # Top-Center
+                "3": (c_x[2] - sw // 2, c_y[0] - sh // 2), # Top-Right
+                "4": (c_x[0] - sw // 2, c_y[1] - sh // 2), # Mid-Left
+                "5": (c_x[1] - sw // 2, c_y[1] - sh // 2), # Center
+                "6": (c_x[2] - sw // 2, c_y[1] - sh // 2), # Mid-Right
+                "7": (c_x[0] - sw // 2, c_y[2] - sh // 2), # Bot-Left
+                "8": (c_x[1] - sw // 2, c_y[2] - sh // 2), # Bot-Center
+                "9": (c_x[2] - sw // 2, c_y[2] - sh // 2), # Bot-Right
+            }
+
+            pos = positions.get(pos_key, positions["5"])
+
             canvas = Image.new("RGBA", (W, H), bg_color)
-            pos = ((W - fr.width) // 2, (H - fr.height) // 2)
             canvas.alpha_composite(fr.convert("RGBA"), pos)
             base_frames.append(np.array(canvas.convert("RGB")))
 
@@ -130,9 +155,7 @@ class SpriteEngine:
 class VideoRenderer:
     @staticmethod
     def render(out_name, base_frames, clean_frame, duration_s, is_loop, fps, keep_last):
-        """
-        ESTO ES EL STREAMING: Enviamos los frames uno a uno usando un generador.
-        """
+        # Streaming: Enviamos los frames uno a uno usando un generador.
         num_base = len(base_frames)
         # Se calcula los frames totales que tendrá el video final
         total_video_frames = int(duration_s * fps)
@@ -167,8 +190,6 @@ class VideoRenderer:
 def main():
     ui = SpriteUI()
     print(f"\n: -- SpriteSheet > Video -- :")
-
-    # PREGUNTAS Y LLAMADAS A LOS DEFS
     # Ruta del sprite
     path = ui.ask_path("Ruta del sprite: ")
     if not path: return
@@ -178,6 +199,7 @@ def main():
     start = ui.ask_int("Frame inicial", default=1, max_val=engine.total_frames)
     end = ui.ask_int("Frame final", default=engine.total_frames, max_val=engine.total_frames)
     scale = ui.ask_float("Escala", default=1.0)
+    pos_key = ui.ask_position()
     # Video y renderizacion
     res_video = ui.ask_video_setup()
     bg_color = ui.ask_background()
@@ -191,15 +213,12 @@ def main():
     keep_last = True
     if not loop and anim_time < duration_s:
         keep_last = input("¿Dejar el último sprite al terminar la animación? [S/n]: ").lower() != 'n'
-
     # 1. Cacheo la semilla (Poco uso de RAM)
     print("- Procesando frames base...")
-    base_frames = engine.get_base_processed(start, end, res_video, scale, bg_color)
-
+    base_frames = engine.get_base_processed(start, end, res_video, scale, bg_color, pos_key)
     # 2. Calculo de los FPS reales para que la animación dure lo que se pidio
     final_fps = max(0.1, len(base_frames) / anim_time)
-
-    # 3. Renderizamos (Streaming - No usa RAM extra)
+    # 3. Renderizamos (Streaming)
     out_file = path.with_suffix(".mp4")
     VideoRenderer.render(out_file, base_frames, engine.clean_frame, duration_s, loop, final_fps, keep_last)
 
