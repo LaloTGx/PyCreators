@@ -189,40 +189,63 @@ class VideoRenderer:
 
 def main():
     ui = SpriteUI()
-    print(f"\n: -- SpriteSheet > Video -- :")
+    print(f"\n: -- SpriteSheet Toolkit -- :")
+    print ("\n¿Que realizaras? [1]:")
+    print ("1) Video")
+    print ("2) Imagen")
+    print ("q) salir")
+    mode = input("> ").strip() or "1"
+
+    if mode.lower() == 'q':
+        print("Saliendo...")
+        return
+
     # Ruta del sprite
     path = ui.ask_path("Ruta del sprite: ")
     if not path: return
     # Informacion sobre el sprite
     canvas_px = ui.ask_int("Tamaño del lienzo (px)", default=64)
     engine = SpriteEngine(path, canvas_px)
-    start = ui.ask_int("Frame inicial", default=1, max_val=engine.total_frames)
-    end = ui.ask_int("Frame final", default=engine.total_frames, max_val=engine.total_frames)
+    print(f"Numero total de frames: 1 - {engine.total_frames}")
+
+    if mode == "2":
+        frame_idx = ui.ask_int(f"\nNumero de frame para la miniatura :",
+                               default=1, max_val=engine.total_frames)
+        start = end = frame_idx
+    else:
+        start = ui.ask_int("Frame inicial", default=1, max_val=engine.total_frames)
+        end = ui.ask_int("Frame final", default=engine.total_frames, max_val=engine.total_frames)
+
+    # Escala, posicion, orientacion y color de fondo
     scale = ui.ask_float("Escala", default=1.0)
     pos_key = ui.ask_position()
-    # Video y renderizacion
     res_video = ui.ask_video_setup()
     bg_color = ui.ask_background()
-    duration_s = ui.ask_time_format()
-    # Tiempos de la animación
-    print(f"\n: -- Velocidad de Animación -- :")
-    manual = input("¿Velocidad manual para el sprite? [s/N]: ").lower() == 's'
-    anim_time = ui.ask_float("Segundos por vuelta", default=1.0) if manual else duration_s
-    loop = input("¿Activar Bucle (Loop)? [s/N]: ").lower() == 's'
-    # Ultimo frame
-    keep_last = True
-    if not loop and anim_time < duration_s:
-        keep_last = input("¿Dejar el último sprite al terminar la animación? [S/n]: ").lower() != 'n'
-    # 1. Cacheo la semilla (Poco uso de RAM)
-    print("- Procesando frames base...")
+    # Cacheo de la semilla
+    print("- Procesando...")
     base_frames = engine.get_base_processed(start, end, res_video, scale, bg_color, pos_key)
-    # 2. Calculo de los FPS reales para que la animación dure lo que se pidio
-    final_fps = max(0.1, len(base_frames) / anim_time)
-    # 3. Renderizamos (Streaming)
-    out_file = path.with_suffix(".mp4")
-    VideoRenderer.render(out_file, base_frames, engine.clean_frame, duration_s, loop, final_fps, keep_last)
 
-    print(f"\n- ¡Listo! {out_file.name}")
+    if mode == "2":
+        out_file=path.parent / f"{path.stem}_img.png"
+        Image.fromarray(base_frames[0]).save(out_file)
+        print(f"\n Imagen Creada :) {out_file.name}")
+    else:
+        # Tiempos de la animación
+        duration_s = ui.ask_time_format()
+        print(f"\n: -- Velocidad de Animación -- :")
+        manual = input("¿Velocidad manual para el sprite? [s/N]: ").lower() == 's'
+        anim_time = ui.ask_float("Segundos por vuelta", default=1.0) if manual else duration_s
+        loop = input("¿Activar Bucle (Loop)? [s/N]: ").lower() == 's'
+        # Ultimo frame
+        keep_last = True
+        if not loop and anim_time < duration_s:
+            keep_last = input("¿Dejar el último sprite al terminar la animación? [S/n]: ").lower() != 'n'
+        # Calculo de los FPS reales para que la animación dure lo que se pidio
+        final_fps = max(0.1, len(base_frames) / anim_time)
+        # Renderizamos (Streaming)
+        out_file = path.with_suffix(".mp4")
+        VideoRenderer.render(out_file, base_frames, engine.clean_frame, duration_s, loop, final_fps, keep_last)
+        print(f"\n- Video Creado :) {out_file.name}")
 
 if __name__ == "__main__":
     main()
