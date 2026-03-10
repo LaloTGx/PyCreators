@@ -128,13 +128,17 @@ class SpriteEngine:
         self.total_frames = self.sheet.width // canvas_px
         self.clean_frame = None
 
-    def get_base_processed(self, start, end, out_size, scale, bg_color, pos_key="5"):
+    def get_base_processed(self, start, end, out_size, scale, bg_color, pos_key="5", existing_frames = None):
         # Optimización: Solo procesamos los frames originales una vez.
         W, H = out_size
-        base_frames = []
-        self.clean_frame = np.array(Image.new("RGB", (W, H), bg_color[:3]))
+        new_base_frames = []
 
-        for i in range(start - 1, end):
+        if existing_frames is None:
+            self.clean_frame = np.array(Image.new("RGB", (W, H), bg_color[:3]))
+        else:
+            pass
+
+        for idx, i in enumerate(range(start - 1, end)):
             x = i * self.canvas_px
             box = (x, 0, x + self.canvas_px, self.sheet.height)
             fr = self.sheet.crop(box)
@@ -164,11 +168,16 @@ class SpriteEngine:
 
             pos = positions.get(pos_key, positions["5"])
 
-            canvas = Image.new("RGBA", (W, H), bg_color)
-            canvas.alpha_composite(fr.convert("RGBA"), pos)
-            base_frames.append(np.array(canvas.convert("RGB")))
+            if existing_frames and idx < len(existing_frames):
+                canvas = Image.fromarray(existing_frames[idx]).convert("RGBA")
+            else:
+                canvas = Image.new("RGBA", (W, H), bg_color)
 
-        return base_frames
+
+            canvas.alpha_composite(fr.convert("RGBA"), pos)
+            new_base_frames.append(np.array(canvas.convert("RGB")))
+
+        return new_base_frames
 # proceso de renderizacion
 class VideoRenderer:
     @staticmethod
@@ -210,28 +219,47 @@ def main():
     # Menú Principal
     mode = ui.ask_mode()
     if not mode: return
-    # Ruta y motor del sprite
-    path, engine = ui.ask_path("Ruta del sprite: ")
-    if not engine: return
-    # Seleccion de frame
-    if mode == "2":
-        frame_idx = ui.ask_int(f"\nNumero de frame para la miniatura :",
+
+    base_frames = None
+    res_video = None
+    bg_color = None
+    final_engine = None
+    output_path = None
+
+    while True:
+        # Ruta y motor del sprite
+        path, engine = ui.ask_path("Ruta del sprite: ")
+        if not engine: break
+
+        if output_path is None: output_path = path
+        final_engine = engine
+        # Seleccion de frame
+        if mode == "2":
+            frame_idx = ui.ask_int(f"\nNumero de frame para la miniatura :",
                                default=1, max_val=engine.total_frames)
-        start = end = frame_idx
-    else:
-        start = ui.ask_int("Frame inicial", default=1, max_val=engine.total_frames)
-        end = ui.ask_int("Frame final", default=engine.total_frames, max_val=engine.total_frames)
-    # Escala, posicion, orientacion y color de fondo
-    scale = ui.ask_float("Escala", default=1.0)
-    pos_key = ui.ask_position()
-    res_video = ui.ask_video_setup()
-    bg_color = ui.ask_background()
-    # Cacheo de la semilla
-    print("- Procesando...")
-    base_frames = engine.get_base_processed(start, end, res_video, scale, bg_color, pos_key)
+            start = end = frame_idx
+        else:
+            start = ui.ask_int("Frame inicial", default=1, max_val=engine.total_frames)
+            end = ui.ask_int("Frame final", default=engine.total_frames, max_val=engine.total_frames)
+
+        # Escala, posicion, orientacion y color de fondo
+        scale = ui.ask_float("Escala", default=1.0)
+        pos_key = ui.ask_position()
+
+        if res_video is None:
+            res_video = ui.ask_video_setup()
+            bg_color = ui.ask_background()
+        # Cacheo de la semilla
+        print("- Procesando...")
+        base_frames = engine.get_base_processed(start, end, res_video, scale, bg_color, pos_key, existing_frames=base_frames)
+
+        more = input("\n¿Deseas agregar otro sprite a la misma escena? [s/N]: ").lower()
+        if more != 's':
+            break
+
     # Salida
     if mode == "2":
-        out_file=path.parent / f"{path.stem}_img.png"
+        out_file=output_path.parent / f"{output_path.stem}_img.png"
         Image.fromarray(base_frames[0]).save(out_file)
         print(f"\n Imagen Creada :) {out_file.name}")
     else:
@@ -244,12 +272,12 @@ def main():
         # Ultimo frame
         keep_last = True
         if not loop and anim_time < duration_s:
-            keep_last = input("¿Dejar el último sprite al terminar la animación? [S/n]: ").lower() != 'n'
+            keep_last = input("¿Dejar el último sprite al terminar la animación? [s/N]: ").lower() != 'n'
         # Calculo de los FPS reales para que la animación dure lo que se pidio
         final_fps = max(0.1, len(base_frames) / anim_time)
         # Renderizamos (Streaming)
-        out_file = path.with_suffix(".mp4")
-        VideoRenderer.render(out_file, base_frames, engine.clean_frame, duration_s, loop, final_fps, keep_last)
+        out_file = output_path.with_suffix(".mp4")
+        VideoRenderer.render(out_file, base_frames, final_engine.clean_frame, duration_s, loop, final_fps, keep_last)
         print(f"\n- Video Creado :) {out_file.name}")
 
 if __name__ == "__main__":
