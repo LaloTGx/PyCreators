@@ -20,14 +20,32 @@ PRESETS = {
 }
 
 class SpriteUI:
+# Menu principal
+    @staticmethod
+    def ask_mode():
+        print(f"\n: -- SpriteSheet Toolkit -- :")
+        print("\n¿Qué realizarás? [1]:")
+        print("1) Video")
+        print("2) Imagen")
+        print("q) salir")
+        mode = input("> ").strip().lower() or "1"
+
+        if mode == 'q':
+            print("Saliendo...")
+            return None
+        return mode
 # pregunta de la ruta de la imagen
     @staticmethod
     def ask_path(prompt: str):
         while True:
             user_input = input(prompt).strip().strip('"')
-            if not user_input: return None
+            if not user_input: return None, None
             p = Path(user_input).expanduser()
-            if p.exists(): return p
+            if p.exists():
+                canvas_px = SpriteUI.ask_int("Tamaño del lienzo (px)", default=64)
+                engine = SpriteEngine(p, canvas_px)
+                print(f"Número total de frames: 1 - {engine.total_frames}")
+                return p, engine
             print(f"No encontré el archivo en {p}")
 # pregunta para valores enteros
     @staticmethod
@@ -189,25 +207,13 @@ class VideoRenderer:
 
 def main():
     ui = SpriteUI()
-    print(f"\n: -- SpriteSheet Toolkit -- :")
-    print ("\n¿Que realizaras? [1]:")
-    print ("1) Video")
-    print ("2) Imagen")
-    print ("q) salir")
-    mode = input("> ").strip() or "1"
-
-    if mode.lower() == 'q':
-        print("Saliendo...")
-        return
-
-    # Ruta del sprite
-    path = ui.ask_path("Ruta del sprite: ")
-    if not path: return
-    # Informacion sobre el sprite
-    canvas_px = ui.ask_int("Tamaño del lienzo (px)", default=64)
-    engine = SpriteEngine(path, canvas_px)
-    print(f"Numero total de frames: 1 - {engine.total_frames}")
-
+    # Menú Principal
+    mode = ui.ask_mode()
+    if not mode: return
+    # Ruta y motor del sprite
+    path, engine = ui.ask_path("Ruta del sprite: ")
+    if not engine: return
+    # Seleccion de frame
     if mode == "2":
         frame_idx = ui.ask_int(f"\nNumero de frame para la miniatura :",
                                default=1, max_val=engine.total_frames)
@@ -215,7 +221,6 @@ def main():
     else:
         start = ui.ask_int("Frame inicial", default=1, max_val=engine.total_frames)
         end = ui.ask_int("Frame final", default=engine.total_frames, max_val=engine.total_frames)
-
     # Escala, posicion, orientacion y color de fondo
     scale = ui.ask_float("Escala", default=1.0)
     pos_key = ui.ask_position()
@@ -224,7 +229,7 @@ def main():
     # Cacheo de la semilla
     print("- Procesando...")
     base_frames = engine.get_base_processed(start, end, res_video, scale, bg_color, pos_key)
-
+    # Salida
     if mode == "2":
         out_file=path.parent / f"{path.stem}_img.png"
         Image.fromarray(base_frames[0]).save(out_file)
