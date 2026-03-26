@@ -11,6 +11,18 @@ import imageio.v3 as iio
 from PIL import Image, ImageColor
 from pathlib import Path
 import numpy as np
+import os
+import readline
+import glob
+
+def path_completer(text, state):
+    text = os.path.expanduser(text)
+    matches = glob.glob(text + '*')
+    return [m + '/' if os.path.isdir(m) else m for m in matches][state]
+
+readline.set_completer_delims(' \t\n;')
+readline.parse_and_bind("tab: complete")
+readline.set_completer(path_completer)
 
 PRESETS = {
     "1":    (1280, 720),
