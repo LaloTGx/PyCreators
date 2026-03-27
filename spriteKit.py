@@ -140,56 +140,60 @@ class SpriteEngine:
         self.total_frames = self.sheet.width // canvas_px
         self.clean_frame = None
 
-    def get_base_processed(self, start, end, out_size, scale, bg_color, pos_key="5", existing_frames = None):
-        # Optimización: Solo procesamos los frames originales una vez.
+    def get_base_processed(self, start, end, out_size, scale, bg_color, pos_key="5", existing_frames=None):
         W, H = out_size
-        new_base_frames = []
 
-        if existing_frames is None:
-            self.clean_frame = np.array(Image.new("RGB", (W, H), bg_color[:3]))
-        else:
-            pass
-
-        for idx, i in enumerate(range(start - 1, end)):
+        # 1. Extraemos los frames seleccionados
+        new_sprite_frames = []
+        for i in range(start - 1, end):
             x = i * self.canvas_px
             box = (x, 0, x + self.canvas_px, self.sheet.height)
             fr = self.sheet.crop(box)
-
             if scale != 1.0:
                 new_size = (int(fr.width * scale), int(fr.height * scale))
                 fr = fr.resize(new_size, Image.NEAREST)
+            new_sprite_frames.append(fr.convert("RGBA"))
 
-            sw, sh = fr.size
-            # Se divide en 3x3 el canvas
-            cw, ch = W // 3, H // 3
-            # Centros de cada celda
-            c_x = [cw // 2, cw + cw // 2, 2 * cw + cw // 2]
-            c_y = [ch // 2, ch + ch // 2, 2 * ch + ch // 2]
+        # 2. Sincronizamos longitudes
+        num_new = len(new_sprite_frames)
+        num_old = len(existing_frames) if existing_frames else 0
+        total_len = max(num_new, num_old)
 
-            positions = {
-                "1": (c_x[0] - sw // 2, c_y[0] - sh // 2), # Top-Left
-                "2": (c_x[1] - sw // 2, c_y[0] - sh // 2), # Top-Center
-                "3": (c_x[2] - sw // 2, c_y[0] - sh // 2), # Top-Right
-                "4": (c_x[0] - sw // 2, c_y[1] - sh // 2), # Mid-Left
-                "5": (c_x[1] - sw // 2, c_y[1] - sh // 2), # Center
-                "6": (c_x[2] - sw // 2, c_y[1] - sh // 2), # Mid-Right
-                "7": (c_x[0] - sw // 2, c_y[2] - sh // 2), # Bot-Left
-                "8": (c_x[1] - sw // 2, c_y[2] - sh // 2), # Bot-Center
-                "9": (c_x[2] - sw // 2, c_y[2] - sh // 2), # Bot-Right
-            }
+        final_frames = []
 
-            pos = positions.get(pos_key, positions["5"])
-
-            if existing_frames and idx < len(existing_frames):
-                canvas = Image.fromarray(existing_frames[idx]).convert("RGBA")
+        for i in range(total_len):
+            # Capa base
+            if existing_frames:
+                # Si el anterior era más corto, lo congelamos en su último frame
+                idx_old = min(i, num_old - 1)
+                canvas = Image.fromarray(existing_frames[idx_old]).convert("RGBA")
             else:
                 canvas = Image.new("RGBA", (W, H), bg_color)
+                if self.clean_frame is None:
+                    self.clean_frame = np.array(canvas.convert("RGB"))
 
+            # Capa nueva (el sprite actual)
+            # USAMOS min() EN LUGAR DE % PARA NO FORZAR EL LOOP
+            idx_new = min(i, num_new - 1)
+            fr = new_sprite_frames[idx_new]
 
-            canvas.alpha_composite(fr.convert("RGBA"), pos)
-            new_base_frames.append(np.array(canvas.convert("RGB")))
+            # --- Cálculo de posición ---
+            sw, sh = fr.size
+            cw, ch = W // 3, H // 3
+            c_x = [cw // 2, cw + cw // 2, 2 * cw + cw // 2]
+            c_y = [ch // 2, ch + ch // 2, 2 * ch + ch // 2]
+            positions = {
+                "1": (c_x[0]-sw//2, c_y[0]-sh//2), "2": (c_x[1]-sw//2, c_y[0]-sh//2), "3": (c_x[2]-sw//2, c_y[0]-sh//2),
+                "4": (c_x[0]-sw//2, c_y[1]-sh//2), "5": (c_x[1]-sw//2, c_y[1]-sh//2), "6": (c_x[2]-sw//2, c_y[1]-sh//2),
+                "7": (c_x[0]-sw//2, c_y[2]-sh//2), "8": (c_x[1]-sw//2, c_y[2]-sh//2), "9": (c_x[2]-sw//2, c_y[2]-sh//2),
+            }
+            pos = positions.get(pos_key, positions["5"])
 
-        return new_base_frames
+            # Composición
+            canvas.alpha_composite(fr, pos)
+            final_frames.append(np.array(canvas.convert("RGB")))
+
+        return final_frames
 # proceso de renderizacion
 class VideoRenderer:
     @staticmethod
